@@ -1,0 +1,19 @@
+package lht.wangtong.core.utils.fullseach.lucene;
+
+
+public class FieldName {
+    public static final String MOD_CODE = "code";
+    public static final String DATA_ID = "dataId";
+    public static final String AUTH_MEM_ID = "auth";
+    public static final String TITLE = "title";
+    public static final String CONTENT = "content";
+    public static final String DATA_DATE = "dateDate";
+    public static final String RELATED_TEXT = "relatedText";
+    public static final String RELATED_FILE = "relatedFile";
+    //public static final String VERSION = "version";
+    public static final String PARAM = "param";
+    public static final String EXTENDED_DATA = "extendedData";
+    public static final String SALES_COUNT = "salesCount";	//销量
+    public static final String PRICE = "price";	//活动价格
+    public static final String COUNT = "count";	//数量
+}

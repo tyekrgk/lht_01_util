@@ -1,0 +1,268 @@
+package lht.wangtong.core.utils.fullseach.lucene;
+
+import java.io.IOException;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.UUID;
+
+import lht.wangtong.core.utils.fullseach.FieldInfo;
+import lht.wangtong.core.utils.fullseach.FieldType;
+import lht.wangtong.core.utils.fullseach.SerializationUtils;
+
+import org.apache.commons.lang3.StringUtils;
+import org.apache.lucene.document.Document;
+import org.apache.lucene.document.DoubleField;
+import org.apache.lucene.document.Field;
+import org.apache.lucene.document.FloatField;
+import org.apache.lucene.document.IntField;
+import org.apache.lucene.document.LongField;
+import org.apache.lucene.document.StringField;
+import org.apache.lucene.document.TextField;
+import org.apache.lucene.index.Term;
+import org.apache.lucene.search.BooleanClause;
+import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.NumericRangeQuery;
+import org.apache.lucene.search.SortField;
+import org.apache.lucene.search.TermQuery;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+
+public class Utils {
+
+    private static String getFieldTypeSuffix(FieldType type) {
+        return ".." + type.toString().toLowerCase();
+    }
+
+    static String getExpandFieldName(String fieldName, FieldType type) {
+        return fieldName + getFieldTypeSuffix(type);
+    }
+
+    static org.apache.lucene.search.SortField.Type getSortFieldType(FieldType type) {
+        switch (type) {
+            case UUID:
+            case STRING:
+            case BOOLEAN:
+            case TEXT:
+                return SortField.Type.STRING;
+            case DATE:
+            case LONG:
+                return SortField.Type.LONG;
+            case INT:
+                return SortField.Type.INT;
+            case FLOAT:
+                return SortField.Type.FLOAT;
+            case DOUBLE:
+                return SortField.Type.DOUBLE;
+        }
+        return null;
+    }
+
+    static java.lang.Iterable<Document> getDocumentAll(Iterable<lht.wangtong.core.utils.fullseach.DocumentWriter> documents) {
+        Set<Document> reDocument = new HashSet<Document>();
+        for (lht.wangtong.core.utils.fullseach.DocumentWriter dw : documents) {
+            reDocument.add(getDocument(dw));
+        }
+        return reDocument;
+    }
+
+    static org.apache.lucene.document.Document getDocument(lht.wangtong.core.utils.fullseach.DocumentWriter documentWriter) {
+
+        org.apache.lucene.document.FieldType storeNoIndex = new org.apache.lucene.document.FieldType();
+        storeNoIndex.setStored(true);
+        storeNoIndex.setIndexed(false);	//只存储值，不建索引
+        org.apache.lucene.document.Document document = new org.apache.lucene.document.Document();
+        //StringField是一个索引可以存储但不分词的Field实现
+        if(documentWriter.getModCode() != null) {
+        	document.add(new StringField(FieldName.MOD_CODE, documentWriter.getModCode(), Field.Store.YES));
+        }
+        if(documentWriter.getDataId() != null) {
+        	document.add(new StringField(FieldName.DATA_ID, documentWriter.getDataId(), Field.Store.YES));
+        }
+        for(UUID id : documentWriter.getAuthMemId()) {
+        	if(id != null) {
+        		document.add(new StringField(FieldName.AUTH_MEM_ID, id.toString(), Field.Store.YES));
+        	}
+        }
+        if(documentWriter.getDateDate() != null) {
+        	document.add(new LongField(FieldName.DATA_DATE, documentWriter.getDateDate().getTime(), Field.Store.YES));
+        }
+        //TextField是一个索引分词可以存储的Field实现
+        if(documentWriter.getTitle() != null) {
+        	document.add(new TextField(FieldName.TITLE, documentWriter.getTitle(), Field.Store.YES));
+        }
+        /*有些时候在搜索时某个字段的权重需要大一些，例如你可能认为标题中出现关键词的文章比正文中出现关键词的文章更有价值，你可以把标题的boost设置的更大，
+        那么搜索结果会优先显示标题中出现关键词的文章（没有使用排序的前题下）。使用方法：
+        Field.setBoost(float boost);默认值是1.0，也就是说要增加权重的需要设置得比1大。*/
+        if(documentWriter.getContent() != null) {
+        	document.add(new TextField(FieldName.CONTENT, documentWriter.getContent(), Field.Store.YES));
+        }
+        try {
+        	if(documentWriter.getExtendedData() != null) {
+        		document.add(new Field(FieldName.EXTENDED_DATA,
+                        SerializationUtils.convertToByte(documentWriter.getExtendedData()),
+                        storeNoIndex));
+        	}
+        } catch (IOException ignored) {
+        }
+        try {
+        	if(documentWriter.getParam() != null) {
+        		document.add(new Field(FieldName.PARAM, (new ObjectMapper()).writeValueAsString(documentWriter.getParam()), storeNoIndex));
+        	}
+        } catch (JsonProcessingException ignored) {
+        	
+        }
+        for(String text : documentWriter.getRelatedTexts()) {
+        	if(text != null) {
+        		document.add(new TextField(FieldName.RELATED_TEXT, text, Field.Store.NO));
+        	}
+        }
+        for(String text : documentWriter.getRelatedFileTexts()) {
+        	if(text != null) {
+        		document.add(new TextField(FieldName.RELATED_FILE, text, Field.Store.NO));
+        	}
+        }
+        for(FieldInfo fieldInfo : documentWriter.getFields()) {
+            switch (fieldInfo.getType()) {
+                case UUID:
+                case STRING:
+                case BOOLEAN:
+                	if(fieldInfo.getValue() != null) {
+                		document.add(new StringField(Utils.getExpandFieldName(fieldInfo.getField(), fieldInfo.getType())
+                                , String.valueOf(fieldInfo.getValue())
+                                , Field.Store.NO));
+                	}
+                    break;
+                case LONG:
+                	if(fieldInfo.getValue() != null) {
+                		document.add(new LongField(Utils.getExpandFieldName(fieldInfo.getField(), fieldInfo.getType())
+                                , (Long) fieldInfo.getValue()
+                                , Field.Store.NO));
+                	}
+                    break;
+                case INT:
+                	if(fieldInfo.getValue() != null) {
+                		document.add(new IntField(Utils.getExpandFieldName(fieldInfo.getField(), fieldInfo.getType())
+                                , (Integer) fieldInfo.getValue()
+                                , Field.Store.NO));
+                	}
+                    break;
+                case FLOAT:
+                	if(fieldInfo.getValue() != null) {
+                		document.add(new FloatField(Utils.getExpandFieldName(fieldInfo.getField(), fieldInfo.getType())
+                                , (Float) fieldInfo.getValue()
+                                , Field.Store.NO));
+                	}
+                    break;
+                case DOUBLE:
+                	if(fieldInfo.getValue() != null) {
+                		document.add(new DoubleField(Utils.getExpandFieldName(fieldInfo.getField(), fieldInfo.getType())
+                                , (Double) fieldInfo.getValue()
+                                , Field.Store.NO));
+                	}
+                    break;
+                case DATE:
+                	if(fieldInfo.getValue() != null) {
+                		document.add(new LongField(Utils.getExpandFieldName(fieldInfo.getField(), fieldInfo.getType())
+                                , ((Date) fieldInfo.getValue()).getTime()
+                                , Field.Store.NO));
+                	}
+                    break;
+                case TEXT:
+                	if(fieldInfo.getValue() != null) {
+                		document.add(new TextField(Utils.getExpandFieldName(fieldInfo.getField(), fieldInfo.getType())
+                                , (String) fieldInfo.getValue()
+                                , Field.Store.NO));
+                	}
+                    break;
+            }
+        }
+        return document;
+    }
+
+    /**
+     * 实现组合查询(哪些字段需要进行匹配)
+     * @param tiQuery
+     * @return
+     */
+    static org.apache.lucene.search.Query getLuceneQuery(lht.wangtong.core.utils.fullseach.Query tiQuery) {
+        BooleanQuery mainQuery = new BooleanQuery();
+        if (!tiQuery.getModCode().isEmpty()) {
+            BooleanQuery booleanQuery = new BooleanQuery();
+            for (String code : tiQuery.getModCode()) {
+                TermQuery termQuery = new TermQuery(new Term(FieldName.MOD_CODE, code));
+                booleanQuery.add(termQuery, BooleanClause.Occur.SHOULD);
+            }
+            mainQuery.add(booleanQuery, BooleanClause.Occur.MUST);
+        }
+
+        if (!tiQuery.getAuthMemId().isEmpty()) {
+            BooleanQuery booleanQuery = new BooleanQuery();
+            for (UUID id : tiQuery.getAuthMemId()) {
+                TermQuery termQuery = new TermQuery(new Term(FieldName.AUTH_MEM_ID, id.toString()));
+                booleanQuery.add(termQuery, BooleanClause.Occur.SHOULD);
+            }
+            mainQuery.add(booleanQuery, BooleanClause.Occur.MUST);
+        }
+
+        if (tiQuery.getStartDate() != null && tiQuery.getEndDate() != null) {
+        	//时间范围
+            final SimpleDateFormat blockSDF = new SimpleDateFormat("yyyy-MM-dd");
+            final SimpleDateFormat integralSDF = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            Date startDate = tiQuery.getStartDate();
+            Date endDate = tiQuery.getEndDate();
+            try {
+                startDate = integralSDF.parse(blockSDF.format(startDate) + " 00:00:00");
+                endDate = integralSDF.parse(blockSDF.format(endDate) + " 24:00:00");
+            } catch (ParseException ignore) {
+            }
+            mainQuery.add(
+                    NumericRangeQuery.newLongRange(FieldName.DATA_DATE,
+                            startDate.getTime(),
+                            endDate.getTime(),
+                            true,
+                            true),
+                    BooleanClause.Occur.MUST);
+        }
+
+        if (!tiQuery.getFindKey().isEmpty()) {
+            BooleanQuery findKeyQuery = new BooleanQuery();
+
+            for (String key : tiQuery.getFindKey()) {
+                if (StringUtils.isNotBlank(key)) {
+                    BooleanQuery booleanQuery = new BooleanQuery();
+                    if (tiQuery.hasTitle()) {
+                        booleanQuery.add(new TermQuery(new Term(FieldName.TITLE, key)), BooleanClause.Occur.SHOULD);
+                    }
+                    if (tiQuery.hasContent()) {
+                        booleanQuery.add(new TermQuery(new Term(FieldName.CONTENT, key)), BooleanClause.Occur.SHOULD);
+                    }
+                    if (tiQuery.hasRelatedText()) {
+                        booleanQuery.add(new TermQuery(new Term(FieldName.RELATED_TEXT, key)), BooleanClause.Occur.SHOULD);
+                    }
+                    if (tiQuery.hasRelatedFile()) {
+                        booleanQuery.add(new TermQuery(new Term(FieldName.RELATED_FILE, key)), BooleanClause.Occur.SHOULD);
+                    }
+                    if (tiQuery.isAndOperator()) {
+                        findKeyQuery.add(booleanQuery, BooleanClause.Occur.MUST);
+                    } else {
+                        findKeyQuery.add(booleanQuery, BooleanClause.Occur.SHOULD);
+                    }
+                }
+            }
+            mainQuery.add(findKeyQuery, BooleanClause.Occur.MUST);
+        }
+
+        if (tiQuery.getFilter() != null) {
+            if (((LuceneQueryFilter) tiQuery.getFilter()).query != null) {
+                mainQuery.add(((LuceneQueryFilter) tiQuery.getFilter()).query, BooleanClause.Occur.MUST);
+            }
+        }
+        return mainQuery;
+    }
+
+}

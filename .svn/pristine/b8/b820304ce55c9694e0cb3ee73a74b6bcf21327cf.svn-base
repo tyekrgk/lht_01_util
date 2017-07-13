@@ -1,0 +1,457 @@
+package lht.wangtong.core.utils.sms;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.UnsupportedEncodingException;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.UUID;
+
+import lht.wangtong.core.utils.date.DateUtil;
+
+import org.apache.commons.codec.binary.Hex;
+import org.apache.commons.httpclient.HttpClient;
+import org.apache.commons.httpclient.HttpException;
+import org.apache.commons.httpclient.HttpMethod;
+import org.apache.commons.httpclient.HttpStatus;
+import org.apache.commons.httpclient.MultiThreadedHttpConnectionManager;
+import org.apache.commons.httpclient.URIException;
+import org.apache.commons.httpclient.methods.GetMethod;
+import org.apache.commons.httpclient.params.HttpMethodParams;
+import org.apache.commons.httpclient.util.URIUtil;
+import org.apache.log4j.Logger;
+
+import com.esms.MessageData;
+import com.esms.PostMsg;
+import com.esms.common.entity.Account;
+import com.esms.common.entity.GsmsResponse;
+import com.esms.common.entity.MTPack;
+import com.esms.common.entity.MTPack.SendType;
+
+/**
+ * 基于URL模板进行发送短信
+ * "http://114.113.154.5/sms.aspx?action=send&account=csliu&password=666666&mobile={mobile}&content={content}";
+ * @author aibozeng
+ *
+ */
+public class SmsSend {
+	
+	 public static Logger logger = Logger.getLogger(SmsSend.class.getClass());
+	
+	public static String MobileParam = "{mobile}";
+	public static String ContentParam = "{content}";
+
+	public static String ENCODE_METHOD_HEX = "HEX";//中文转为byte的十六进制字符
+	public static String ENCODE_METHOD_URLENCODING = "URLEncoder";//普通的url编码
+	public static String ENCODE_METHOD_LINKAI = "LINKAI";//普通的url编码
+	public static String ENCODE_XW_LINKAI = "XW";//普通的url编码
+	
+	/**
+	 * 真正调用 HTTP 请求发送短信
+	 * @param content 内容
+	 * @param toMobileNo 手机号
+	 * @param url 发送模版  固定参数为 
+	 * @return
+	 */
+	public String retReplaceAndPost(String url, String toMobileNo,String content,String encodingFormat ){
+		String retureValue="0";
+		String urlNew = url.replace(MobileParam, toMobileNo);
+		try {
+			urlNew = urlNew.replace(ContentParam, URIUtil.encodeQuery(content,encodingFormat));//UTF-8
+		} catch (URIException e1) {   //URIException e1
+			logger.error(e1);
+			return "-1";
+		}
+		
+		logger.debug("url:"+urlNew);
+	    try{
+		      HttpClient httpClient = new HttpClient(); 
+		      httpClient.getHttpConnectionManager().getParams().setConnectionTimeout(5000); 
+		      GetMethod getMethod = new GetMethod(urlNew);
+		      getMethod.getParams().setParameter(HttpMethodParams.HTTP_CONTENT_CHARSET, encodingFormat); 
+		    	int statusCode = httpClient.executeMethod(getMethod); 
+		    	if(statusCode == HttpStatus.SC_OK){
+		    		 retureValue = getMethod.getResponseBodyAsString();
+				    	getMethod.releaseConnection();
+		    	}
+		    }catch(HttpException e){ 
+		       logger.error(e); 
+		    }catch(Exception e){ 
+		    	logger.error(e); 
+		    }
+		    return retureValue;
+	}
+	
+	
+	
+	/**
+	 * 发送短信 
+	 * @param url  url模板
+	 * @param phone  目标手机号
+	 * @param content  内容(在这里，传入的固定是utf-8)
+	 * @param encodingFormat 短信方要求的字符集编码,如果不是utf-8，则进行转码再发出去
+	 * @return
+	 */
+	public String sendSms(String url, String phone, String content,String charset,String encodeMethod) {
+		if(charset==null){
+			charset = "UTF-8";
+		}
+		if(ENCODE_METHOD_URLENCODING.equals(encodeMethod)){
+			//普通的转码和url encoding
+			if(!"UTF-8".equals(charset)){
+				//如果短信方要求的编码不是utf-8,则需要转码
+				try {
+					content = new String(content.getBytes(),charset);
+				} catch (Exception e) {
+					logger.error(e);
+				}
+			}
+			try {
+				content = URLEncoder.encode(content,charset);
+			} catch (UnsupportedEncodingException e) {
+				logger.error(e);
+			}
+		}else if(ENCODE_METHOD_HEX.equals(encodeMethod)){
+			//移通的要求
+			content = encodeHexStr(content,charset);
+		}else if(ENCODE_METHOD_LINKAI.equals(encodeMethod)){
+			int inputLine=doGetRequestLinKai(url, phone, content, "");
+			logger.debug("返回结果:"+inputLine);
+			return ""+inputLine;
+		}else if(ENCODE_XW_LINKAI.equals(encodeMethod)){
+			int inputLine=doGetRequestXW(phone, content);
+			logger.debug("返回结果:"+inputLine);
+			return ""+inputLine;
+		}else{
+			logger.debug("unknow encodeMethod="+encodeMethod);
+		}
+				
+		logger.debug("encodeContent:"+content);
+		String urlstr = url.replace(MobileParam, phone).replace(ContentParam, content);
+		logger.debug("发送url:"+urlstr);
+		String tmp = doGetRequest(urlstr);//doGetRequest(urlstr,charset);
+		logger.debug("返回结果:"+tmp);
+		return tmp;
+	}
+	
+	
+	/*
+	 * 发送方法  其他方法同理      返回0 或者 1 都是  提交成功
+	 */
+	public static int doGetRequestLinKai(String urlParam,String Mobile,String Content,String send_time) {
+		int inputLine = 0;
+		try {
+			URL url = null;
+			String send_content=URLEncoder.encode(Content.replaceAll("<br/>", " "), "GB2312");//发送内容
+			String urlstr = urlParam.replace(MobileParam, Mobile).replace(ContentParam, send_content);
+			logger.debug("encodeContent:"+send_content);
+			logger.debug("发送url:"+urlstr);
+			url = new URL(urlstr);
+			BufferedReader in = null;
+			in = new BufferedReader(new InputStreamReader(url.openStream()));
+			inputLine = new Integer(in.readLine()).intValue();
+		} catch (Exception e) {
+			System.out.println("网络异常,发送短信失败！");
+			inputLine=-2;
+		}
+		return inputLine;
+	}
+	
+	
+	/*
+	 * 发送方法  其他方法同理      返回0 或者 1 都是  提交成功
+	 */
+	public static int doGetRequestXW(String Mobile,String content) {
+		int inputLine = 0;
+		try {
+			Account ac = new Account("ASYK@ASYK", "z5Bq46H2");
+			PostMsg pm = new PostMsg();
+			//mos网关
+			pm.getCmHost().setHost("211.147.239.62", 9080);//设置网关的IP和port，用于发送信息
+			pm.getWsHost().setHost("211.147.239.62", 9070);//设置网关的 IP和port，用于获取账号信息、上行、状态报告等等
+			//400网关
+			//pm.getCmHost().setHost("211.147.239.62", 8450);//设置网关的IP和port，用于发送信息
+			//pm.getWsHost().setHost("211.147.239.62", 8460);//设置网关的 IP和port，用于获取账号信息、上行、状态报告等等
+//			/**代理上网设置,如果需要*/
+//			HostInfo proxyHost = new HostInfo("192.168.0.47", 1080);
+//			proxyHost.setType(HostInfo.ConnectionType.SOCKET4);  	//设置连接类型
+//			proxyHost.setUsername("004");						//设置用户名
+//			proxyHost.setPassword("123");							//设置密码
+//			pm.getProxy().setProxy(proxyHost);					//设置代理			
+			
+			//doSendSms(pm, ac); //短信下行
+//			doSendMms(pm, ac); //彩信下行
+			
+//			doGetAccountInfo(pm, ac); //获取账号信息
+//			doModifyPwd(pm, ac); //修改密码
+			
+//			doFindResps(pm, ac); //查询提交报告
+//			doFindReports(pm, ac); //查询状态报告
+		
+//			doGetMos(pm, ac); //获取上行信息
+//			doGetResps(pm, ac); //获取提交报告
+//			doGetReports(pm, ac); //获取状态报告
+			//String send_content=URLEncoder.encode(Content.replaceAll("<br/>", " "), "UTF-8");//发送内容
+			MTPack pack = new MTPack();
+			pack.setBatchID(UUID.randomUUID());
+			pack.setBatchName("短信测试批次");
+			pack.setMsgType(MTPack.MsgType.SMS);
+			pack.setBizType(0);
+			pack.setDistinctFlag(false);
+			pack.setSendType(SendType.GROUP);
+			ArrayList<MessageData> msgs = new ArrayList<MessageData>();
+			
+//			/** 单发，一号码一内容 */
+			//msgs.add(new MessageData("13568902392", "接口短信单发测试"));
+			msgs.add(new MessageData(Mobile, content));
+			pack.setMsgs(msgs);
+			
+			/** 群发，多号码一内容 */
+//			pack.setSendType(MTPack.SendType.MASS);
+//			String content = "短信发送测试";
+//			msgs.add(new MessageData("13430258111", content));
+//			msgs.add(new MessageData("13430258222", content));
+//			msgs.add(new MessageData("13430258333", content));
+//			pack.setMsgs(msgs);
+			
+//			/** 组发，多号码多内容 */
+//			pack.setSendType(SendType.GROUP);
+//			msgs.add(new MessageData("13430258111", "短信组发测试111"));
+//			msgs.add(new MessageData("13430258222", "短信组发测试222"));
+//			msgs.add(new MessageData("13430258333", "短信组发测试333"));
+//			pack.setMsgs(msgs);
+			
+			/** 设置模板编号(静态模板将以模板内容发送; 动态模板需要发送变量值，JSON格式：[{"key":"变量名1","value":"变量值1"},{"key":"变量名2","value":"变量值2"}]) */
+			//pack.setTemplateNo("test");
+			
+			GsmsResponse resp = pm.post(ac, pack);
+			System.out.println(resp);
+			
+			inputLine = 1;
+		} catch (Exception e) {
+			System.out.println("网络异常,发送短信失败！");
+			inputLine=-2;
+		}
+		return inputLine;
+	}
+	
+	
+	/**
+     * 发送http GET请求，并返回http响应字符串 --- 移通的取不到返回结果，浏览器里请求url则有结果 command=MT_RESPONSE&spid=7794&mtmsgid=14133498866395827&mtstat=ACCEPTD&mterrcode=000
+     * @param urlstr 完整的请求url字符串
+     * @return
+     */
+    public static String doGetRequest(String urlstr,String charset) {
+        StringBuffer responseSb = new StringBuffer();
+        if (charset.equals("UnicodeBigUnmarked") || charset.equals("UTF-16BE")) {
+        	//Content-Type
+        	charset="UTF-8";
+        }
+        try {
+            URL url = new URL(urlstr);
+            HttpURLConnection httpConn = (HttpURLConnection) url.openConnection();
+            httpConn.setRequestMethod("GET");
+            httpConn.setRequestProperty("Content-Type", "text/html; charset="+charset);
+            //System.setProperty("sun.net.client.defaultConnectTimeout", "5000");//jdk1.4换成这个,连接超时
+            //System.setProperty("sun.net.client.defaultReadTimeout", "10000"); //jdk1.4换成这个,读操作超时
+            //httpConn.setConnectTimeout(5000);//jdk 1.5换成这个,连接超时
+            //httpConn.setReadTimeout(10000);//jdk 1.5换成这个,读操作超时
+            httpConn.setDoInput(true);
+            int rescode = httpConn.getResponseCode();
+            if (rescode == 200) {
+                BufferedReader bfw = new BufferedReader(new InputStreamReader(httpConn.getInputStream()));
+                while(bfw.readLine()!=null){
+                    responseSb.append(bfw.readLine());
+                }
+                bfw.close();
+            } else {
+            	responseSb.append("Http request error code :" + rescode);
+            }
+            httpConn.disconnect();
+        } catch (Exception e) {
+            logger.debug(e.toString());
+        } finally{
+        	
+        }
+        return responseSb.toString();
+    }
+    
+    /**
+     * 发送http GET请求，并返回http响应字符串
+     * 
+     * @param urlstr 完整的请求url字符串
+     * @return
+     */
+    public static String doGetRequest(String urlstr) {
+        String res = null;
+        HttpClient client = new HttpClient(new MultiThreadedHttpConnectionManager());
+        client.getParams().setIntParameter("http.socket.timeout", 10000);
+        client.getParams().setIntParameter("http.connection.timeout", 5000);
+
+		
+      HttpMethod httpmethod = new GetMethod(urlstr);
+        try {
+            int statusCode = client.executeMethod(httpmethod);
+            if (statusCode == HttpStatus.SC_OK) {
+                res = httpmethod.getResponseBodyAsString();
+            }
+        } catch (HttpException e) {
+            logger.error(e);
+        } catch (IOException e) {
+            logger.error(e);
+        } finally {
+            httpmethod.releaseConnection();
+        }
+        return res;
+    }	
+
+    
+    /**
+     * 将普通字符串转换成Hex编码字符串--上海移通的要求
+     * 参数sm为经过编码后生成的Hex字符串，如发送内容“你好2008”，
+     * 经过GBK编码后变成“c4e3bac332303038”（dc=15）；
+     * 经过Unicode(UTF_16BE)编码则变为“4f60597d0032003000300038”（dc=8）
+     * @param realStr 普通字符串
+     * @param charset 编码格式，GBK ,UnicodeBigUnmarked,ISO8859-1
+     * @return Hex编码字符串
+     */    
+    public static String encodeHexStr(String realStr,String dataCoding) {
+        String hexStr = null;
+        if (realStr != null) {
+            try {
+                if (dataCoding.equals("GBK")) {
+                    hexStr = new String(Hex.encodeHex(realStr.getBytes("GBK")));
+                } else if (dataCoding.equals("UTF-8") || dataCoding.equals("UTF-16BE")||dataCoding.equals("UnicodeBigUnmarked")) {
+                    hexStr = new String(Hex.encodeHex(realStr.getBytes("UnicodeBigUnmarked")));
+                } else {
+                    hexStr = new String(Hex.encodeHex(realStr.getBytes("ISO8859-1")));
+                }
+            } catch (UnsupportedEncodingException e) {
+                logger.error(e);
+            }
+        }
+        return hexStr;
+    }
+	
+	/**
+	 * 上海移通的测试，移通的，系统自动增加后缀的 [碧昆北京]。 注意：sm=86{content}是表示自动加86
+	 */
+   private void  testYt(){
+		//http://esms4.etonenet.com/sms/mt?command=MT_REQUEST&spid=7794&sppassword=ays@7794&da=8615600531477&dc=15&sm=c4e3bac332303038
+
+
+		String url = "http://esms4.etonenet.com/sms/mt?command=MT_REQUEST&spid=5451&sppassword=bikun@bj123&da=86{mobile}&dc=8&sm={content}";
+		String phone = "15600531477";//"13311028679";
+		String content = "你好20082222";
+
+/*		String url = "http://esms4.etonenet.com/sms/mt?command=MT_REQUEST&spid=7794&sppassword=ays@7794&da={mobile}&dc=8&sm=86{content}";
+		String phone = "13311028679";//"13311028679" //"15600531477";
+		String content = "你好2008";*/
+
+		String charset = "UnicodeBigUnmarked";
+		String encodeMethod = ENCODE_METHOD_HEX;
+		sendSms(url, phone, content, charset,encodeMethod);
+   }
+	
+   /**
+    * 湖南尚科  http://self.zucp.net  您那边可以使用sn和pwd登录进去查看当月的短信内容记录
+    *  http://sdk2.entinfo.cn/z_send.aspx
+    * z_send：gb2312编码，pwd明文，纯http的调用方法
+z_mdsmssend：gb2312编码，pwd加密，纯http的调用方法
+mdSmsSend_u：utf-8编码，pwd加密，webservice调用方法
+返回值	返回值说明	问题描述
+1	没有需要取得的数据	取用户回复就出现1的返回值,表示没有回复数据
+-2 	帐号/密码不正确	1.序列号未注册2.密码加密不正确3.密码已被修改
+-4	余额不足	直接调用查询看是否余额为0或不足
+-5	数据格式错误	
+-6	参数有误	看参数传的是否均正常,请调试程序查看各参数
+-7	权限受限	该序列号是否已经开通了调用该方法的权限
+-8	流量控制错误	
+-9	扩展码权限错误	该序列号是否已经开通了扩展子号的权限
+-10	内容长度长	短信内容过长
+-11	内部数据库错误	
+-12	序列号状态错误	序列号是否被禁用
+    */
+   private void  testSk(){
+		//String url = "http://sdk2.entinfo.cn:8060/z_mdsmssend.aspx?sn=SDK-CKS-010-00307&pwd=CD8C919C135F80DCA7A59698250D5C46&mobile={mobile}&content={content}&ext=&rrid=&stime=";		
+		//String url2 = "http://sdk.entinfo.cn:8060/webservice.asmx/mdSmsSend_u?sn=SDK-CKS-010-00307&pwd=CD8C919C135F80DCA7A59698250D5C46&mobile={mobile}&content={content}&ext=&rrid=&stime=";
+		String url3 = "http://sdk.entinfo.cn:8061/webservice.asmx/mdsmssend?sn=SDK-CKS-010-00307&pwd=CD8C919C135F80DCA7A59698250D5C46&mobile={mobile}&content={content}&ext=&rrid=&stime=&msgfmt=";
+		String phone = "18175891910";//"15367853125";//"18874704373";//13311028679;
+		String content = "[帝楷•量身定制 尊荣私享] 欢迎开启您的量身定制之旅,注册验证码:"+DateUtil.date2String(new Date(),"HHss")
+               +"切勿将验证码泄露于他人，如非本人操作，建议及时修改密码【派意特】";
+		String charset = "UTF-8";
+		String encodeMethod = ENCODE_METHOD_URLENCODING;
+		sendSms(url3, phone, content, charset,encodeMethod);
+   }
+	
+   /**
+    * 天下畅通
+    * http://xtx.telhk.cn:8888/sms.aspx?action=send&userid=3269&account=txct0701&password=aa18911201510&mobile=15600531477&content=你好【绿核桃】
+    */
+   public void testTxct(){
+	   String url4 = " http://xtx.telhk.cn:8888/sms.aspx?action=send&userid=3269&account=txct0701&password=aa18911201510&mobile={mobile}&content={content}";
+       String phone = "15600531477";
+       String content="您好，最近今天有寒流经过，请及时添加衣物。【绿核桃】";
+		String charset = "UTF-8";
+		String encodeMethod = ENCODE_METHOD_URLENCODING;
+       sendSms(url4,phone,content,charset,encodeMethod);
+   }
+   
+   public void testLinKai(){
+	   String url4 = "http://mb345.com:999/ws/BatchSend.aspx?CorpID=LKSDK0004503&Pwd=jkwqm814@&Mobile={mobile}&Content={content}&Cell=&SendTime=";
+       String phone = "13568902392";
+       String content="欢迎您加入国卫远程医疗团队,在系统中输入短信序列码221330，注册验证码2578。30分钟内有效。";
+		String charset = "gb2312";
+		String encodeMethod = ENCODE_METHOD_LINKAI;
+		 String re = sendSms(url4,phone,content,charset,encodeMethod);
+		 System.out.println(re);
+   }
+   public void testLinKai1(){
+	   //错误编码 -3密码错误
+	   String url4 = "http://yzm.mb345.com/ws/BatchSend2.aspx?CorpID=CDLK00767&Pwd=ss1103@&Mobile={mobile}&Content={content}&Cell=&SendTime=";
+       //String phone = "18000531621";//电信
+       //String phone = "15198191680";//移动
+	   //String phone = "17628292003";//联通
+	   String phone = "15198191680";//电信
+       String content="爱视远程医疗团队欢迎您归队注册验证码2367,5分钟内有效【艾视医疗】";
+	   String charset = "gb2312";
+	   String encodeMethod = ENCODE_METHOD_LINKAI;
+       String re = sendSms(url4,phone,content,charset,encodeMethod);
+       System.out.println(re);
+   }
+   
+   public void testLinXW(){
+	   //错误编码 -3密码错误
+	   String url4 = "http://yzm.mb345.com/ws/BatchSend2.aspx?CorpID=CDLK00767&Pwd=ss1103@&Mobile={mobile}&Content={content}&Cell=&SendTime=";
+       //String phone = "18000531621";//电信
+       //String phone = "15198191680";//移动
+	   //String phone = "17628292003";//联通
+	   //String phone = "13568902392";//电信
+	   String phone = "13730662714";//移动
+       String content="你的验证码2367,5分钟内有效,切勿泄露于他人。";
+	   String charset = "gb2312";
+	   String encodeMethod = ENCODE_XW_LINKAI;
+       String re = sendSms(url4,phone,content,charset,encodeMethod);
+       System.out.println(re);
+   }
+      
+	public static void main(String[] args) {
+		SmsSend sms = new SmsSend();
+		sms.testLinXW();
+		//sms.testSk();
+		//sms.testYt();
+		//sms.testLinKai1();
+		try {
+			logger.debug(new String(Hex.encodeHex("你好2008".getBytes("GBK"))));
+			logger.debug(new String(Hex.encodeHex("你好2008".getBytes("UTF-8"))));
+			logger.debug(new String(Hex.encodeHex("你好2008".getBytes("UnicodeBigUnmarked"))));
+		} catch (UnsupportedEncodingException e) {
+			// TODO Auto-generated catch block
+			logger.error(e);
+		}
+	}
+}

@@ -1,0 +1,513 @@
+package lht.wangtong.core.utils.vo;
+
+import java.io.Serializable;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * 放置于 Session的标识当前登录用户的信息。这是一个泛指。
+ * 
+ * @see LoginEmployee 针对企业自身职员
+ * 
+ * @author liyl
+ */
+@SuppressWarnings("serial")
+public class LoginUser implements Serializable {
+	private Long id = 1L; // 用户表 T_USER.id 的主键
+	private Long subUserId = 1L; // 具体用户类型的id,如：employee.id , member.id 等
+	private String subUserStatus="1";//1.草稿(用户没有提交审核,需要提示上传资料审核),2.任务中(已经提交了资料，等待审核中,不需要提示上传,显示审核中)，3.生效 
+	private String userType = UserTypeEnum.Admin.getCode(); // 超级管理员、公司管理员，公司员工等
+															// 
+															// CommonCD.SubUserType
+	private Integer roleAssignLevel = 9999; // 权限级别
+	private Long starLevel = 0L; // 会员级别表 levelNum,不是id 2014-10-17 aibozeng
+	private String language = "NAME_ZH"; // 当前用户的语言
+	private String funcID; // 当前访问的菜单id
+	private String refererUrl; // 上次的url,一般用于.do界面进入某个新增或修改界面后, 返回按钮的链接就使用这个值
+	private String userId = "admin"; // 登录帐号 T_USER_ALIAS.loginName ,
+										// 一个用户可能有多个登录名
+										// 2014-09-19 如果用户没有登录，这里存放的是
+										// cookie(GuestToken)的值，利于后台Service处理
+	private String userNm = "admin"; // 用户昵称 ,可以随意变的
+	private String employeeNm = "admin"; // 员工表里面的名称
+	private String userCode = ""; // 人的编号，一旦录入系统，不能轻易改变的，如：员工编码、会员卡号等
+	private Date loginDate = new Date(); // 登录日期
+	private Date lastLogin = new Date(); // 上次登录时间
+	private String lastIp; // 上次登录ip
+	private String isNeedChangePwd = "N"; // 是否需要修改密码
+	private String logonToken; // 登录令牌,坐席位
+	private Date accessDate = new Date(); // 最后访问日期
+	private boolean logined = false; // 表明是否已经登录 Session中可以放入一个 new User() , 如果
+										// logined==false，表明没有登录
+	private String styleName = "default"; // 用户的样式文件
+	private Map<Long, Set<Integer>> funcAuthCodes = new HashMap<Long, Set<Integer>>(); // 存储登录用户拥有的授权菜单的id和authCode
+	private Set<String> pointUrls = new HashSet<String>(); // 存储登录用户所有的按钮url
+	private Long ownerId = 0l; // 交易圈ID 2015-11-07 aibozeng 改为登录哪个系统(来源于applicationContext-jpa.xml里的ownerId配置值)
+	private Long logonTimes; // 登录次数
+	private String serverNm;
+
+	private String errorMsg;
+	private String errorCode;
+
+	/**
+	 * 以下是与公司信息有关 ,员工注册时挂靠的公司,与公司权限无关 方便在基础模块或业务模块中,公司、组织、区域出现缺省值
+	 */
+	private String compType = "10000"; // 公司类
+	private String subCompType; // 子公司类型
+	private Long compId;
+	private String compAbbr;
+	private String compCode;
+	private Long orgaDefId;// 组织
+	private Long salesOrgaId;// 区域
+	private String salesOrgaCode;//区域编码
+	private String guestToken;// 浏览器的cookies
+	private String seatCode;//坐席位
+	private String seatStatus="1";
+	private String userStatus="1";//
+	private String txpwd="0";//腾讯签名
+	private String doctorQm="";
+	private String roleListStr="";
+	/**
+	 * 微信
+	 */
+	private String wxId;
+	private String wxName;
+	/**
+	 * app
+	 */
+	private Long expiresIn;	//过期时间
+	private String qrWesseCode = "";	//爱视业务员APP推广参数
+	private String qrWesseCodeUrl = "";	//爱视业务员APP推广二维码路径
+
+	public LoginUser() {
+	}
+
+	public LoginUser(Long id) {
+		this.id = id;
+	}
+
+	/**
+	 * 是否是超级管理员
+	 * 
+	 * @return
+	 */
+	public boolean isAdmin() {
+		return UserTypeEnum.Admin.getCode().equals(userType);
+	}
+
+	public Long getId() {
+		return id;
+	}
+
+	public void setId(Long id) {
+		this.id = id;
+	}
+
+	public boolean isLogined() {
+		return logined;
+	}
+
+	public void setLogined(boolean logined) {
+		this.logined = logined;
+	}
+
+	public String getUserId() {
+		return userId;
+	}
+
+	public void setUserId(String userId) {
+		this.userId = userId;
+	}
+
+	public String getUserNm() {
+		return userNm;
+	}
+
+	public void setUserNm(String userNm) {
+		this.userNm = userNm;
+	}
+
+	public String getName() {
+
+		return userNm;
+	}
+
+	public String getUserType() {
+		return userType;
+	}
+
+	public void setUserType(String userType) {
+		this.userType = userType;
+	}
+
+	public Date getLoginDate() {
+		return loginDate;
+	}
+
+	public void setLoginDate(Date loginDate) {
+		this.loginDate = loginDate;
+	}
+
+	public Date getAccessDate() {
+		return accessDate;
+	}
+
+	public void setAccessDate(Date accessDate) {
+		this.accessDate = accessDate;
+	}
+
+	public static final String COOKIE_SEPARATOR = "^";
+
+	public String toString() {
+		StringBuilder sb = new StringBuilder(100);
+		sb.append(this.getId()).append(COOKIE_SEPARATOR)
+				.append(this.getUserId()).append(COOKIE_SEPARATOR)
+				.append(this.getUserNm()).append(COOKIE_SEPARATOR)
+				.append(this.getUserType()).append(COOKIE_SEPARATOR)
+				.append("userType=" + this.getUserType())
+				.append(COOKIE_SEPARATOR)
+				.append("logonToken=" + getLogonToken())
+				.append(COOKIE_SEPARATOR).append("isLogin=" + isLogined());
+		return sb.toString();
+	}
+
+	public String getLogonToken() {
+		return logonToken;
+	}
+
+	public void setLogonToken(String logonToken) {
+		this.logonToken = logonToken;
+	}
+
+	public String getIsNeedChangePwd() {
+		return isNeedChangePwd;
+	}
+
+	public void setIsNeedChangePwd(String isNeedChangePwd) {
+		this.isNeedChangePwd = isNeedChangePwd;
+	}
+
+	public String getUserCode() {
+		return userCode;
+	}
+
+	public void setUserCode(String userCode) {
+		this.userCode = userCode;
+	}
+
+	public Long getSubUserId() {
+		return subUserId;
+	}
+
+	public void setSubUserId(Long subUserId) {
+		this.subUserId = subUserId;
+	}
+
+	public String getStyleName() {
+		return styleName;
+	}
+
+	public void setStyleName(String styleName) {
+		this.styleName = styleName;
+	}
+
+	public Long getOwnerId() {
+		return ownerId;
+	}
+
+	public void setOwnerId(Long ownerId) {
+		this.ownerId = ownerId;
+	}
+
+	public Integer getRoleAssignLevel() {
+		return roleAssignLevel;
+	}
+
+	public void setRoleAssignLevel(Integer roleAssignLevel) {
+		this.roleAssignLevel = roleAssignLevel;
+	}
+
+	public String getLanguage() {
+		return language;
+	}
+
+	public void setLanguage(String language) {
+		this.language = language;
+	}
+
+	public String getFuncID() {
+		return funcID;
+	}
+
+	public void setFuncID(String funcID) {
+		this.funcID = funcID;
+	}
+
+	public String getEmployeeNm() {
+		return employeeNm;
+	}
+
+	public void setEmployeeNm(String employeeNm) {
+		this.employeeNm = employeeNm;
+	}
+
+	public Date getLastLogin() {
+		return lastLogin;
+	}
+
+	public void setLastLogin(Date lastLogin) {
+		this.lastLogin = lastLogin;
+	}
+
+	public Long getLogonTimes() {
+		return logonTimes;
+	}
+
+	public void setLogonTimes(Long logonTimes) {
+		this.logonTimes = logonTimes;
+	}
+
+	public String getLastIp() {
+		return lastIp;
+	}
+
+	public void setLastIp(String lastIp) {
+		this.lastIp = lastIp;
+	}
+
+	public String getServerNm() {
+		return serverNm;
+	}
+
+	public void setServerNm(String serverNm) {
+		this.serverNm = serverNm;
+	}
+
+	public Set<String> getPointUrls() {
+		return pointUrls;
+	}
+
+	public void setPointUrls(Set<String> pointUrls) {
+		this.pointUrls = pointUrls;
+	}
+
+	public Map<Long, Set<Integer>> getFuncAuthCodes() {
+		return funcAuthCodes;
+	}
+
+	public void setFuncAuthCodes(Map<Long, Set<Integer>> funcAuthCodes) {
+		this.funcAuthCodes = funcAuthCodes;
+	}
+
+	public String getErrorMsg() {
+		return errorMsg;
+	}
+
+	public void setErrorMsg(String errorMsg) {
+		this.errorMsg = errorMsg;
+	}
+
+	public String getErrorCode() {
+		return errorCode;
+	}
+
+	public void setErrorCode(String errorCode) {
+		this.errorCode = errorCode;
+	}
+
+	public String getCompType() {
+		return compType;
+	}
+
+	public void setCompType(String compType) {
+		this.compType = compType;
+	}
+
+	public Long getCompId() {
+		return compId;
+	}
+
+	public void setCompId(Long compId) {
+		this.compId = compId;
+	}
+
+	public String getCompAbbr() {
+		return compAbbr;
+	}
+
+	public void setCompAbbr(String compAbbr) {
+		this.compAbbr = compAbbr;
+	}
+
+	public String getCompCode() {
+		return compCode;
+	}
+
+	public void setCompCode(String compCode) {
+		this.compCode = compCode;
+	}
+
+	public Long getOrgaDefId() {
+		return orgaDefId;
+	}
+
+	public void setOrgaDefId(Long orgaDefId) {
+		this.orgaDefId = orgaDefId;
+	}
+
+	public Long getSalesOrgaId() {
+		return salesOrgaId;
+	}
+
+	public void setSalesOrgaId(Long salesOrgaId) {
+		this.salesOrgaId = salesOrgaId;
+	}
+
+	public Long getMemberId() {
+		return getSubUserId();
+	}
+	
+	public String getGuestToken() {
+		return guestToken;
+	}
+
+	public void setGuestToken(String guestToken) {
+		this.guestToken = guestToken;
+	}
+
+	/**
+	 * 会员级别表 levelNum,不是id
+	 * @return
+	 */
+	public Long getStarLevel() {
+		return starLevel;
+	}
+
+	public void setStarLevel(Long starLevel) {
+		this.starLevel = starLevel;
+	}
+
+	public String getRefererUrl() {
+		return refererUrl;
+	}
+
+	public void setRefererUrl(String refererUrl) {
+		this.refererUrl = refererUrl;
+	}
+
+	public String getSubUserStatus() {
+		return subUserStatus;
+	}
+
+	public void setSubUserStatus(String subUserStatus) {
+		this.subUserStatus = subUserStatus;
+	}
+
+	public String getSubCompType() {
+		return subCompType;
+	}
+
+	public void setSubCompType(String subCompType) {
+		this.subCompType = subCompType;
+	}
+
+	public String getSeatCode() {
+		return seatCode;
+	}
+
+	public void setSeatCode(String seatCode) {
+		this.seatCode = seatCode;
+	}
+
+	public String getSeatStatus() {
+		return seatStatus;
+	}
+
+	public void setSeatStatus(String seatStatus) {
+		this.seatStatus = seatStatus;
+	}
+
+	public String getUserStatus() {
+		return userStatus;
+	}
+
+	public void setUserStatus(String userStatus) {
+		this.userStatus = userStatus;
+	}
+
+	public String getTxpwd() {
+		return txpwd;
+	}
+
+	public void setTxpwd(String txpwd) {
+		this.txpwd = txpwd;
+	}
+
+	public String getDoctorQm() {
+		return doctorQm;
+	}
+
+	public void setDoctorQm(String doctorQm) {
+		this.doctorQm = doctorQm;
+	}
+
+	public String getRoleListStr() {
+		return roleListStr;
+	}
+
+	public void setRoleListStr(String roleListStr) {
+		this.roleListStr = roleListStr;
+	}
+
+	public String getWxId() {
+		return wxId;
+	}
+
+	public void setWxId(String wxId) {
+		this.wxId = wxId;
+	}
+
+	public String getWxName() {
+		return wxName;
+	}
+
+	public void setWxName(String wxName) {
+		this.wxName = wxName;
+	}
+
+	public String getSalesOrgaCode() {
+		return salesOrgaCode;
+	}
+
+	public void setSalesOrgaCode(String salesOrgaCode) {
+		this.salesOrgaCode = salesOrgaCode;
+	}
+
+	public Long getExpiresIn() {
+		return expiresIn;
+	}
+
+	public void setExpiresIn(Long expiresIn) {
+		this.expiresIn = expiresIn;
+	}
+
+	public String getQrWesseCode() {
+		return qrWesseCode;
+	}
+
+	public void setQrWesseCode(String qrWesseCode) {
+		this.qrWesseCode = qrWesseCode;
+	}
+
+	public String getQrWesseCodeUrl() {
+		return qrWesseCodeUrl;
+	}
+
+	public void setQrWesseCodeUrl(String qrWesseCodeUrl) {
+		this.qrWesseCodeUrl = qrWesseCodeUrl;
+	}
+	
+}
